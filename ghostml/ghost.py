@@ -43,7 +43,7 @@ def optimize_threshold_from_predictions(labels, probs, thresholds,
     thresholds: list of floats
         List of decision thresholds to screen for classification
     ThOpt_metrics: str
-        Optimization metric. Choose between "Kappa" and "ROC"
+        Optimization metric. Choose between "Kappa", "Balanced", and "ROC"
     N_subsets: int
         Number of training subsets to use in the optimization
     subsets_size: float or int
@@ -68,10 +68,16 @@ def optimize_threshold_from_predictions(labels, probs, thresholds,
     for thresh in thresholds:
         df_preds[str(thresh)] = [1 if x>=thresh else 0 for x in probs]
     # Optmize the decision threshold based on the Cohen's Kappa coefficient
-    if ThOpt_metrics == 'Kappa':
-        # pick N_subsets training subsets and determine the threshold that provides the highest kappa on each 
+    if ThOpt_metrics in ('Kappa','Balanced'):
+        if ThOpt_metrics=='Kappa':
+            scorer = metrics.cohen_kappa_score
+        elif ThOpt_metrics=='Balanced':
+            scorer = metrics.balanced_accuracy_score
+        else:
+            raise ValueError('unrecognized metric')
+        # pick N_subsets training subsets and determine the threshold that provides the highest score on each 
         # of the subsets
-        kappa_accum = []
+        accum = []
         for i in range(N_subsets):
             if with_replacement:
                 if isinstance(subsets_size, float):
@@ -82,12 +88,12 @@ def optimize_threshold_from_predictions(labels, probs, thresholds,
                 labels_subset = df_subset['labels']
             else:
                 df_tmp, df_subset, labels_tmp, labels_subset = train_test_split(df_preds, labels, test_size = subsets_size, stratify = labels, random_state = random_seeds[i])
-            kappa_train_subset = []
+            train_subset = []
             for col1 in thresh_names:
-                kappa_train_subset.append(metrics.cohen_kappa_score(labels_subset, list(df_subset[col1])))
-            kappa_accum.append(kappa_train_subset)
+                train_subset.append(scorer(labels_subset, list(df_subset[col1])))
+            accum.append(train_subset)
         # determine the threshold that provides the best results on the training subsets
-        y_values_median, y_values_std = helper_calc_median_std(kappa_accum)
+        y_values_median, y_values_std = helper_calc_median_std(accum)
         opt_thresh = thresholds[np.argmax(y_values_median)]
     # Optmize the decision threshold based on the ROC-curve, as described here https://doi.org/10.1007/s11548-013-0913-8
     elif ThOpt_metrics == 'ROC':
@@ -118,6 +124,8 @@ def optimize_threshold_from_predictions(labels, probs, thresholds,
         median_specificity, std_specificity = helper_calc_median_std(specificity_accum)
         roc_dist_01corner = (2*median_sensitivity*median_specificity)/(median_sensitivity+median_specificity)
         opt_thresh = thresholds[np.argmax(roc_dist_01corner)]
+    else:
+        raise ValueError('unrecognized metric')
     return opt_thresh
 
 def optimize_threshold_from_oob_predictions(labels_train, oob_probs, thresholds, ThOpt_metrics = 'Kappa'):
