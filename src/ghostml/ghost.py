@@ -151,13 +151,19 @@ def optimize_threshold_from_oob_predictions(labels_train, oob_probs, thresholds,
     """
 
     # Optmize the decision threshold based on the Cohen's Kappa coefficient
-    if ThOpt_metrics == 'Kappa':
+    if ThOpt_metrics in ('Kappa','Balanced'):
+        if ThOpt_metrics=='Kappa':
+            scorer = metrics.cohen_kappa_score
+        elif ThOpt_metrics=='Balanced':
+            scorer = metrics.balanced_accuracy_score
+        else:
+            raise ValueError('unrecognized metric')
         tscores = []
         # evaluate the score on the oob using different thresholds
         for thresh in thresholds:
             scores = [1 if x>=thresh else 0 for x in oob_probs]
-            kappa = metrics.cohen_kappa_score(labels_train,scores)
-            tscores.append((np.round(kappa,3),thresh))
+            score = scorer(labels_train,scores)
+            tscores.append((np.round(score,3),thresh))
         # select the threshold providing the highest kappa score as optimal
         tscores.sort(reverse=True)
         thresh = tscores[0][-1]
